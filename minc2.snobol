@@ -1,0 +1,1658 @@
+ DEFAULT_DEFS = TABLE()
+ INPUT('DEF_TXT','defaults2.txt',0) :F(NO_DEFS)
+ INPUT('ENTS','ents.txt',0) :F(NO_ENTS)
+ OUTPUT('EMIT_SCBLK','SCBLKS') :F(NO_SCBLK)
+ OUTPUT('EMIT_ELBL','ELBLS') :F(NO_ELBLS)
+ OUTPUT('EMIT','CPROG') :F(NOCPROG)
+*
+*	Build DEFAULT_DEFS. This table records machine defaults for
+*	the "EQU  *" assembler op, including character code values.
+*
+GETDEF DEF_L = DEF_TXT " " :F(DEFS_DONE)
+ DEF_L BREAK(' ') . SYMBOL SPAN(' ') BREAK(' ') . VALUE :F(DEF_FAIL)
+ DEFAULT_DEFS<SYMBOL> = VALUE :(GETDEF)
+DEF_FAIL EMIT = "// DEFAULT PARSE ERROR: " DEF_L :(GETDEF)
+DEFS_DONE INPUT('MINIMAL','v37.min',0) :F(NO_SOURCE)
+*
+*	Initialize some happy variables
+*
+*	SECTION_NUMBER: as delimited by the SEC op
+*	N_STATIC: current address in static-land (constants, global variables, and the like)
+*	PNAM_TABLE: procedure declarations
+*	SYM_TABLE: symbol declarations
+*	FIX_UPS: static areas that need to be filled in because of forward referencing and
+*	  the like.
+*	DEF_SYM: 1 for constant definitions
+*	ERROR_MESSAGES: all the error messages from ERR and ERB
+*	JSR_N: which JSR we are doing (used to label the return point)
+*
+ SECTION_NUMBER = 0
+ N_STATIC = 0
+ PNAM_TABLE = TABLE()
+ SYM_TABLE = TABLE()
+ FIX_UPS = TABLE()
+ DEF_SYM = TABLE()
+ DEF_SYM<"FAKE$ZERO"> = 1
+ SYM_TABLE<"FAKE$ZERO"> = 0
+ ERROR_MESSAGES = TABLE()
+ JSR_N = 0
+*
+* CONDITIONAL ASSEMBLY STACK IF_STACK
+*
+* TOP OF STACK MAY BE U = UNCONDITIONAL
+*  I = IF (POSITIVE)
+*  IS = IF (SKIPPING)
+*  E = ELSE (POSITIVE)
+*  ES = ELSE (SKIPPING)
+*
+ IF_STACK = TABLE()
+ IF_DEPTH = 0
+ IF_STACK<IF_DEPTH> = 'U'
+*
+* CONDITIONAL ASSEMBLY SYMBOLS
+*
+ COND_ASM_SYM = TABLE()
+*
+* Define all functions.
+*
+* The OP_XXX functions implement the Minimal assembler instructions
+* and directives.
+*
+ DEFINE('OP_ADD(LABEL,OPERANDS,COMMENTS)V,N')
+ DEFINE('OP_ADI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ADR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ANB(LABEL,OPERANDS,COMMENTS)W0,W1')
+ DEFINE('OP_AOV(LABEL,OPERANDS,COMMENTS)V,N,P')
+ DEFINE('OP_ATN(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_BCT(LABEL,OPERANDS,COMMENTS)N,V')
+ DEFINE('OP_BEQ(LABEL,OPERANDS,COMMENTS)N,V,P')
+ DEFINE('OP_BNE(LABEL,OPERANDS,COMMENTS)N,V,P')
+ DEFINE('OP_BGT(LABEL,OPERANDS,COMMENTS)N,V,P')
+ DEFINE('OP_BGE(LABEL,OPERANDS,COMMENTS)N,V,P')
+ DEFINE('OP_BLT(LABEL,OPERANDS,COMMENTS)N,V,P')
+ DEFINE('OP_BLE(LABEL,OPERANDS,COMMENTS)N,V,P')
+ DEFINE('OP_BLO(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_BHI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_BNZ(LABEL,OPERANDS,COMMENTS)N,P')
+ DEFINE('OP_BRI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_BRN(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_BSW(LABEL,OPERANDS,COMMENTS)X,V,P')
+ DEFINE('OP_BTW(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_BZE(LABEL,OPERANDS,COMMENTS)N,P')
+ DEFINE('OP_CEQ(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CHK(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CHP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CMB(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CMC(LABEL,OPERANDS,COMMENTS)P0,P1')
+ DEFINE('OP_CNE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_COS(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CSC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CTB(LABEL,OPERANDS,COMMENTS)W,V')
+ DEFINE('OP_CTW(LABEL,OPERANDS,COMMENTS)W,V')
+ DEFINE('OP_CVD(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_CVM(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DAC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DBC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DCA(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DCV(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DIC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DRC(LABEL,OPERANDS,COMMENTS)X,Y')
+ DEFINE('OP_DTC(LABEL,OPERANDS,COMMENTS)EXPR,N,C,TEXT')
+ DEFINE('OP_DVI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_DVR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_EJC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_END(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ENP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ENT(LABEL,OPERANDS,COMMENTS)V')
+ DEFINE('OP_EQU(LABEL,OPERANDS,COMMENTS)V')
+ DEFINE('OP_ERB(LABEL,OPERANDS,COMMENTS)N,M')
+ DEFINE('OP_ERR(LABEL,OPERANDS,COMMENTS)N,M')
+ DEFINE('OP_ESW(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ETX(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_EXI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_EXP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_FLC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ICA(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ICP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ICV(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_IEQ(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_IFF(LABEL,OPERANDS,COMMENTS)V,P')
+ DEFINE('OP_IGE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_IGT(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ILE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ILT(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_INE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_INO(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_INP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_INR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_IOV(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ITR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_JSR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LCH(LABEL,OPERANDS,COMMENTS)R,C')
+ DEFINE('OP_LCP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LCT(LABEL,OPERANDS,COMMENTS)W,V')
+ DEFINE('OP_LCW(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LDI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LDR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LEI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LNF(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LSH(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_LSX(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MCB(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MFI(LABEL,OPERANDS,COMMENTS)N,L')
+ DEFINE('OP_MLI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MLR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MNZ(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MOV(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MVC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MVW(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MWB(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_MTI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_NGI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_NGR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_NZB(LABEL,OPERANDS,COMMENTS)W,P')
+ DEFINE('OP_ORB(LABEL,OPERANDS,COMMENTS)W0,W1')
+ DEFINE('OP_PPM(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_PRC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_PLC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_PSC(LABEL,OPERANDS,COMMENTS)X,V')
+ DEFINE('OP_REQ(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RGE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RGT(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RLE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RLT(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RNE(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RMI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RNO(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ROV(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RSH(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RSX(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RTI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_RTN(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SBI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SBR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SCH(LABEL,OPERANDS,COMMENTS)R,C')
+ DEFINE('OP_SCP(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SEC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SIN(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SQR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SSL(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SSS(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_STI(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_STR(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_SUB(LABEL,OPERANDS,COMMENTS)V,N')
+ DEFINE('OP_TAN(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_TRC(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_TTL(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_WTB(LABEL,OPERANDS,COMMENTS)WTB_TYPE')
+ DEFINE('OP_XOB(LABEL,OPERANDS,COMMENTS)W0,W1')
+ DEFINE('OP_ZER(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ZGB(LABEL,OPERANDS,COMMENTS)')
+ DEFINE('OP_ZRB(LABEL,OPERANDS,COMMENTS)W,P')
+*
+* Operands: these functions return the appropriate
+* C code for instruction operands.
+*
+* OPERAND_XXX corresponds to operand type XXX in the
+* Minimal documentation (e.g., OPERAND_OPN parses
+* the OPN operand type).
+*
+ DEFINE('OPERAND_EQOP(OPERANDS)V0,V1')
+ DEFINE('OPERAND_VAL(OPERANDS)')
+ DEFINE('OPERAND_OPC(OP)X')
+ DEFINE('OPERAND_OPS(OP)I,X')
+ DEFINE('OPERAND_OPW(OP)X')
+ DEFINE('OPERAND_OPN(OP)X')
+ DEFINE('OPERAND_OPV(OP)X')
+*
+* EMIT_LABEL generates a C goto label for
+* any label appearing in the assembler source.
+*
+ DEFINE('EMIT_LABEL(LABEL)')
+*
+* EMIT_STRING_CONSTANT turns strings into unsigned
+* long longs.
+*
+ DEFINE('EMIT_STRING_CONSTANT(F,TEXT)N,EXPR')
+*
+* Our two favorite register match patterns
+*
+ INDEX_REG = ("XR" | "XL" | "XS" | "XT")
+ W_REG = ("WA" | "WB" | "WC")
+*
+* Main loop
+*
+* We pad the input to 72 spaces because the patterns
+* are simpler that way (and because that's how the files
+* look in IBM-land).
+*
+GETLINE MIN_LINE = MINIMAL :F(EOF)
+ MIN_LINE = LT(SIZE(MIN_LINE),72) MIN_LINE DUPL(' ',72 - SIZE(MIN_LINE))
+*  Increase STLIMIT
+ &STLIMIT = &STCOUNT + 25000
+ MIN_LINE FENCE '.' :S(COND)
+ IF_STACK<IF_DEPTH> RTAB(1) 'S' :S(GETLINE)
+ MIN_LINE FENCE '*' :S(COMMENT)
+ MIN_LINE LEN(5) . LABEL LEN(2) LEN(3) . OP LEN(2)
++ BREAK(' ') . OPERANDS REM . COMMENTS :F(PARSE_ERROR)
+ OP "   " :S(GETLINE)
+ EMIT = "// " OP
+*
+*	Call the appropriate function for the opcode we just found.
+*
+ APPLY('OP_' OP, LABEL, OPERANDS, COMMENTS) :S(GETLINE)F(PARSE_ERROR)
+*
+*	Here when things go wrong: complain!
+*
+PARSE_ERROR EMIT = "// PARSE ERROR: " MIN_LINE :(END)
+*
+*	Pass comments through
+*
+COMMENT EMIT = "// " MIN_LINE :(GETLINE)
+*
+*	Here to process conditional-assembly directives
+*
+COND MIN_LINE FENCE '.' BREAK(' ') . COND_OP :F(PARSE_ERROR)
+ COND_OP 'IF' :S(COND_IF)
+ COND_OP 'THEN' :S(COND_THEN)
+ COND_OP 'ELSE' :S(COND_ELSE)
+ COND_OP 'FI' :S(COND_FI)
+ COND_OP 'DEF' :S(COND_DEF)
+ COND_OP 'UNDEF' :F(PARSE_ERROR)
+ MIN_LINE FENCE '.UNDEF' SPAN(' ') BREAK(' ') . OPERAND :F(PARSE_ERROR)
+*
+* UNDEF: set the value to zero
+*
+ EMIT = "// UNDEF " OPERAND
+ COND_ASM_SYM<OPERAND> = 0 :(GETLINE)
+*
+* DEF: set the value to one, report error if
+*  it is already defined
+*
+COND_DEF EMIT = "// DEF " MIN_LINE
+ MIN_LINE TAB(0) ".DEF" SPAN(' ') BREAK(' ') . OPERAND
++ :F(PARSE_ERROR)
+ COND_ASM_SYM<OPERAND> = EQ(COND_ASM_SYM<OPERAND>) 1 :S(GETLINE)
+ EMIT = "// *** ERROR: " OPERAND " ALREADY DEFINED.":(GETLINE)
+*
+* IF: push the IF onto the stack. If we're already skipping,
+*  just keep right on skipping. Otherwise, evaluate the condition
+*  to see if we need to skip or not.
+*
+COND_IF MIN_LINE FENCE ".IF" SPAN(' ') BREAK(' ') . OPERAND
++ :F(PARSE_ERROR)
+ IF_DEPTH = IF_DEPTH + 1
+ IF_STACK<IF_DEPTH - 1> RTAB(1) 'S' :F(IF_EVAL)
+ IF_STACK<IF_DEPTH> = 'IS' :(GETLINE)
+*
+* Here if we need to evaluate the IF
+*
+IF_EVAL EMIT = "// .IF " OPERAND
+ IF_STACK<IF_DEPTH> = NE(COND_ASM_SYM<OPERAND>) 'I' :S(GETLINE)
+ EMIT = "// ...SKIPPING"
+ IF_STACK<IF_DEPTH> = 'IS' :(GETLINE)
+*
+* THEN: does absolutely nothing. But just check to make sure
+*  that we have an IF, for grins.
+*
+COND_THEN IF_STACK<IF_DEPTH> FENCE 'I' :S(GETLINE)
+ EMIT = "// .THEN OUTSIDE OF .IF" :(GETLINE)
+*
+* ELSE: make sure we're in an IF clause. If so, check
+*  the level below us on the stack. If it was skipping,
+*  just keep right on skipping (but in ELSE state rather
+*  than IF state).  If the level-below is not skipping,
+*  then we evaluated the IF and now need to flip the skip
+*  state.
+*
+COND_ELSE IF_STACK<IF_DEPTH> FENCE 'I' :F(COND_ELSE_ERROR)
+ IF_STACK<IF_DEPTH - 1> RTAB(1) 'S' :F(ELSE_FLIP)
+ IF_STACK<IF_DEPTH> = 'ES' :(GETLINE)
+COND_ELSE_ERROR EMIT = "// ELSE DOES NOT FOLLOW IF" :(END)
+*
+* Here to flip state. Pattern match and replace.
+*
+ELSE_FLIP EMIT = "// .ELSE"
+ IF_STACK<IF_DEPTH> FENCE 'IS' = 'E' :S(GETLINE)
+ EMIT = "// ...SKIPPING"
+ IF_STACK<IF_DEPTH> = 'ES' :(GETLINE)
+*
+* FI: pop the IF stack.
+*
+COND_FI EMIT = "// .FI"
+ IF_DEPTH = GT(IF_DEPTH) IF_DEPTH - 1 :S(GETLINE)
+ EMIT = "// CONDITIONAL ASSEMBLY STACK UNDERFLOW" :(END)
+*
+* Emit code for each of the assembler opcodes.
+*
+* OP_ADD: add two operands
+*
+OP_ADD EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . V ',' REM . N :F(FRETURN)
+ EMIT = "  *((unsigned long long *) " OPERAND_OPN(N) ") += "
++ OPERAND_OPV(V) "; // ADD " OPERANDS :S(RETURN)F(FRETURN)
+*
+* OP_ADI: add to the integer accumulator
+*
+OP_ADI EMIT_LABEL(LABEL)
+ EMIT = "  integer_overflow = CHECKINT_NO_ERROR;"
+ EMIT = "  IA = check_int64_add(IA, *((long long *) "
++ OPERAND_OPS(OPERANDS) "), &integer_overflow"
++ "); // ADI " OPERANDS :S(RETURN)F(FRETURN)
+*
+* OP_ADR: add to the real accumulator (long double)
+*
+OP_ADR EMIT_LABEL(LABEL)
+ EMIT = "  RA += *((long double *) " OPERAND_OPS(OPERANDS)
++ "); // ADR " OPERANDS :S(RETURN)F(FRETURN)
+*
+* ANB: bit-wise and
+*
+OP_ANB EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . W0 ',' W_REG . W1 RPOS(0) :F(FRETURN)
+ EMIT = "  " W1 " &= *((unsigned long long *) " OPERAND_OPW(W0)
++ "); // ANB " OPERANDS :S(RETURN)F(FRETURN)
+*
+* AOV: Unsigned addition with overflow detection.
+*
+OP_AOV EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . V ',' BREAK(',') . N ',' REM . P
++ :F(FRETURN)
+ EMIT = "  *" OPERAND_OPN(N) " += " OPERAND_OPV(V) ";" :F(FRETURN)
+ EMIT = "  if (*" OPERAND_OPN(N) " < " OPERAND_OPV(V) ") goto "
++ REPLACE(P,"$","_") "; // AOV " OPERANDS :(RETURN)
+*
+* ATN: single-operand arc tangent of the real accumulator.
+*
+OP_ATN EMIT_LABEL(LABEL)
+ EMIT = "  RA = atanl(RA); // ATN" :(RETURN)
+*
+* BCT: count-and-branch (pre-decrement, so a count of one means
+*  do not branch)
+*
+OP_BCT EMIT_LABEL(LABEL)
+ OPERANDS POS(0) ("WA" | "WB" | "WC") . W "," REM . V :F(FRETURN)
+ EMIT = "  if (--" W ") goto " V
++ "; // BCT " OPERANDS :(RETURN)
+*
+* BEQ: branch if equal
+*
+OP_BEQ EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' BREAK(',') . V ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") == (" OPERAND_OPV(V) ")) goto " P "; // BEQ " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BGE: branch if greater than or equal to (unsigned)
+*
+OP_BGE EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' BREAK(',') . V ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") >= (" OPERAND_OPV(V) ")) goto " P "; // BGE " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BGT: branch if greater than (unsigned)
+*
+OP_BGT EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' BREAK(',') . V ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") > (" OPERAND_OPV(V) ")) goto " P "; // BGT " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BHI: branch if greater than (unsigned),
+*  synonym for BGT in this implementation
+*
+OP_BHI OP_BGT(LABEL,OPERANDS,COMMENTS) :S(RETURN)F(FRETURN)
+*
+* BLE: branch if less than or equal to (unsigned)
+*
+OP_BLE EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' BREAK(',') . V ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") <= (" OPERAND_OPV(V) ")) goto " P "; // BLE " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BLO: branch if less than (unsigned), synonym for BLT in
+*  this implementation.
+*
+OP_BLO OP_BLT(LABEL,OPERANDS,COMMENTS) :S(RETURN)F(FRETURN)
+*
+* BLT: branch if less than (unsigned)
+*
+OP_BLT EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' BREAK(',') . V ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") < (" OPERAND_OPV(V) ")) goto " P "; // BLT " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BNE: branch if not equal
+*
+OP_BNE EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' BREAK(',') . V ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") != (" OPERAND_OPV(V) ")) goto " P "; // BNE " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BNZ: branch if not zero
+*
+OP_BNZ EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") != 0) goto " P "; // BNZ " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* BRI: branch indirect to address stored in memory.
+*
+OP_BRI EMIT_LABEL(LABEL)
+ EMIT = "  goto *((void *) min_mem<:*" OPERAND_OPN(OPERANDS) ":>);"
++ " // BRI " OPERANDS :S(RETURN)F(FRETURN)
+*
+* BRN: unconditional branch
+*
+OP_BRN EMIT_LABEL(LABEL)
+ EMIT = "  goto " REPLACE(OPERANDS,"$","_") "; // BRN " OPERANDS
++ :(RETURN)
+*
+* BSW: branch on switch value.  Implemented as C switch()
+*  save default branch (if there is one) as BSW_P.
+*
+OP_BSW EMIT_LABEL(LABEL)
+ BSW_P = ""
+ OPERANDS POS(0) INDEX_REG . X ',' BREAK(',') . V ',' REM . BSW_P
++ RPOS(0) :S(BSW_HAS_P)
+ OPERANDS POS(0) INDEX_REG . X ',' REM . V :F(FRETURN)
+BSW_HAS_P BSW_N = 0
+ EMIT = "  switch ((unsigned long long) " X ") {" :(RETURN)
+*
+* BTW: bytes to words. One byte per word so a no-op.
+*
+OP_BTW EMIT_LABEL(LABEL)
+ EMIT = "  ; // BTW (do nothing)" :(RETURN)
+*
+* BZE: branch if zero
+*
+OP_BZE EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' REM . P
++ :F(FRETURN)
+ EMIT = "  if (*((unsigned long long *) " OPERAND_OPN(N)
++ ") == 0) goto " P "; // BZE " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* CEQ: branch if characters equal (use BEQ)
+*
+OP_CEQ OP_BEQ(LABEL,OPERANDS,COMMENTS) :F(FRETURN)S(RETURN)
+*
+* CHK: check for stack (almost) overflow.
+*
+OP_CHK EMIT_LABEL(LABEL)
+ EMIT = "  if (XS < STACK_LIMIT) goto STACK_OVERFLOW; // CHK" :(RETURN)
+*
+* CHP: Chop (i.e., floor) of real accumulator
+*
+OP_CHP EMIT_LABEL(LABEL)
+ EMIT = "  RA = floorl(RA); // CHP" :(RETURN)
+*
+* CMB: complement bits
+*
+OP_CMB EMIT_LABEL(LABEL)
+ EMIT = "  " OPERANDS " = ~" OPERANDS "; // CMB" :(RETURN)
+*
+* CMC: compare characters
+*
+OP_CMC EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(",") . P0 "," REM . P1 :F(FRETURN)
+ EMIT = "  for ("
+ EMIT = "       XL = 0, XR = 0; WA; CXL++,CXR++,WA--) {"
+ EMIT = "    if (*CXL < *CXR) goto " REPLACE(P0,"$","_") ";"
+ EMIT = "    if (*CXL > *CXR) goto " REPLACE(P1,"$","_") ";"
+ EMIT = "  } // CMC " OPERANDS :(RETURN)
+*
+* CNE: branch if character values not equal (use BNE)
+*
+OP_CNE OP_BNE(LABEL,OPERANDS,COMMENTS) :S(RETURN)F(FRETURN)
+*
+* COS: cosine of real accumulator
+*
+OP_COS EMIT_LABEL(LABEL)
+ EMIT = "  RA = cosl(RA); // COS" :(RETURN)
+*
+* CSC: complete store characters (do nothing, since we
+*  actually keep the pointers in special shadow registers).
+*
+OP_CSC EMIT_LABEL(LABEL) 
+ EMIT = "  ; // CSC " OPERANDS " (no operation)" :(RETURN)
+*
+* CTB: compute bytes (in our case, words) to store some
+*  number of characters. Use CTW since they are identical
+*  for our implementation.
+*
+OP_CTB OP_CTW(LABEL,OPERANDS,COMMENTS) :S(RETURN)F(FRETURN)
+*
+* CTW: compute words requried to store some number of
+*  characters (given in a W register) plus a some additional
+*  constant number of words.
+*
+OP_CTW EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W "," REM . V :F(FRETURN)
+ EMIT = "  " W " = ((" W "+7)/8) + " OPERAND_VAL(V) "; // CTW or CTB "
++ OPERANDS :S(RETURN)F(FRETURN)
+*
+* CVD: inverse of CVM.  Pull out one digit, divide by 10.
+*
+OP_CVD EMIT_LABEL(LABEL)
+ EMIT = "  WA = '0' - (IA % 10);"
+ EMIT = "  IA /= 10; // CVD" :(RETURN)
+*
+* CVM: convert from characters to IA by multiplying
+*  the non-positive value in IA by 10 and subtracting
+*  the value for WB. Non-positive and subtract because
+*  that way we can correctly convert the most negative
+*  signed integer in lovely 2s complement land.
+*  Branch on overflow.
+*
+OP_CVM EMIT_LABEL(LABEL)
+ OPERANDS = REPLACE(OPERANDS,"$","_")
+ EMIT = "  IA = 10*IA - (WB - '0');"
+ EMIT = "  if (IA > 0) goto " OPERANDS "; // CVM " TRIM(OPERANDS) :(RETURN)
+*
+* DAC: address constant. If we don't have a definition yet,
+*  enter it in our FIX_UPS table to be set later.
+*
+OP_DAC OPERANDS POS(0) SPAN('0123456789') . V RPOS(0) :S(N_DAC)
+ V = SYM_TABLE<OPERANDS>
+ V = EQ(SIZE(V)) 0 :F(N_DAC)
+ FIX_UPS<OPERANDS> = FIX_UPS<OPERANDS> " " N_STATIC
+N_DAC EMIT = "  " V ", // DAC " LABEL "(" OPERANDS "=" V ")"
++ " " N_STATIC
+ SYM_TABLE<LABEL> = NE(SIZE(TRIM(LABEL))) N_STATIC
+ N_STATIC = N_STATIC + 1 :(RETURN)
+*
+* DBC: bit strint constant, i.e., an unsigned integer
+*
+OP_DBC EMIT = "  " OPERAND_VAL(OPERANDS)
++ ", // DBC " LABEL "(" OPERANDS ") " N_STATIC
+ SYM_TABLE<LABEL> = NE(SIZE(TRIM(LABEL))) N_STATIC
+ N_STATIC = N_STATIC + 1 :(RETURN)
+*
+* DCA: decrement address
+*
+OP_DCA EMIT_LABEL(LABEL)
+ EMIT = "  *((unsigned long long *) " OPERAND_OPN(OPERANDS)
++ ") -= 1; // DCA " OPERANDS :S(RETURN)F(FRETURN)
+*
+* DCV: decrement value (same as DCA in this implementation).
+*
+OP_DCV EMIT_LABEL(LABEL)
+ EMIT = "  *" OPERAND_OPN(OPERANDS)
++ " -= 1; // DCV " OPERANDS :S(RETURN)F(FRETURN)
+*
+* DIC: integer constant
+*
+OP_DIC EMIT = "  " OPERANDS ", // DIC "
+ SYM_TABLE<LABEL> = NE(SIZE(TRIM(LABEL))) N_STATIC
+ N_STATIC = N_STATIC + 1 :(RETURN)
+*
+* DRC: real constant.
+*  record value in our FIX_UPS table rather than
+*  try to compute it in a cross-compiler.
+*
+OP_DRC
+ EMIT = "  0,"
+ EMIT = "  0,"
+ SYM_TABLE<LABEL> = NE(SIZE(TRIM(LABEL))) N_STATIC
+ FIX_UPS<TRIM(OPERANDS)> = ' ' N_STATIC
+ N_STATIC = N_STATIC + 2 :(RETURN)
+*
+* DTC: delimited character constant. Use
+*  EMIT_STRING_CONSTANT to actually set the
+*  words.
+*
+OP_DTC MIN_LINE TAB(12) LEN(1) . DELIMITER :F(FRETURN)
+ EMIT = "// DELIMITER IS " DELIMITER
+ MIN_LINE TAB(12) *DELIMITER *BREAK(DELIMITER) . TEXT *DELIMITER
++ :F(FRETURN)
+ SYM_TABLE<LABEL> = NE(SIZE(TRIM(LABEL))) N_STATIC
+ EMIT_STRING_CONSTANT(.EMIT,TEXT) :S(RETURN)F(FRETURN)
+*
+* DVI: signed integer division
+*
+OP_DVI EMIT_LABEL(LABEL)
+ EMIT = "  integer_overflow = CHECKINT_NO_ERROR;"
+ EMIT = "  IA = check_int64_div(IA, *((long long *) " OPERAND_OPS(OPERANDS)
++ "), &integer_overflow);" :S(RETURN)F(FRETURN)
+*
+* DVR: real division
+*
+OP_DVR EMIT_LABEL(LABEL)
+ EMIT = "  RA /= *((long double *) " OPERAND_OPS(OPERANDS)
++ ");" :S(RETURN)F(FRETURN)
+*
+* EJC: eject listing (which we don't actually produce)
+*
+OP_EJC :(RETURN)
+*
+* END: end of source: emit constant SCBLK (string), error
+*  messages, and all the other Fun Things we need.
+*
+*  We have collected error messages from ERB and ERR in the
+*  ERROR_MESSAGES table.  We create an SCBLK for each message
+*  and a body for the SYSEM procedure to return the SCBLK.
+*
+*  Because we are a Big Honking Computer, we just keep all the
+*  error messages in core all the time, go us, and let the
+*  paging mechanism grab them from disk the New Fashioned Way.
+*
+OP_END EMIT_LABEL(LABEL)
+ ERROR_MESSAGE_ARRAY = CONVERT(ERROR_MESSAGES,'ARRAY')
+ I = 1
+ EMIT_SCBLK = "#define SCBLK_START " N_STATIC
+ EMIT_SCBLK = "static const unsigned long long scblks<::> = {"
+ ERROR_SCBLKS = TABLE()
+ERROR_LOOP
++ EMIT_SCBLK = "  0," SIZE(TRIM(ERROR_MESSAGE_ARRAY<I,2>)) ","
++ :F(ERROR_SWITCH)
+ &STLIMIT = &STCOUNT + 25000
+ ERROR_SCBLKS<I> = N_STATIC
+ N_STATIC = N_STATIC + 2
+ EMIT_STRING_CONSTANT(.EMIT_SCBLK,TRIM(ERROR_MESSAGE_ARRAY<I,2>))
+ I = I + 1 :(ERROR_LOOP)
+*
+* Here we emit the switch statement that turns error codes into
+* SCBLKs.
+*
+ERROR_SWITCH  EMIT = "SYSEM:"
+ EMIT = "  switch (WA) {"
+ I = 0
+ERROR_SWITCH_LOOP I = I + 1
+ EMIT = "    case " ERROR_MESSAGE_ARRAY<I,1>
++ ": XR = " ERROR_SCBLKS<I> ";" :F(ERROR_SWITCH_LOOP_END)
+ EMIT = "      break;" :(ERROR_SWITCH_LOOP)
+ERROR_SWITCH_LOOP_END
+ EMIT = "    default: XR = 0;"
+ EMIT = "  }"
+ EMIT = "  goto *SYSEM_return;"
+*
+* A version number for the compiler.
+*
+ I = "(0)"
+ EMIT = "#define HEADER_LINE " N_STATIC
+ N_STATIC = N_STATIC + 2
+ EMIT_SCBLK = "  0," SIZE(I) ","
+ EMIT_STRING_CONSTANT(.EMIT_SCBLK,I)
+*
+* A description of the computer.
+*
+ I = "SomeComputer:SomeOs:SomeSite"
+ EMIT = "#define SYSHS_STRING " N_STATIC
+ N_STATIC = N_STATIC + 2
+ EMIT_SCBLK = "  0," SIZE(I) ","
+ EMIT_STRING_CONSTANT(.EMIT_SCBLK,I)
+*
+* A name for the compiler.
+*
+ I = "Silly C Translated Macro Spitbol"
+ EMIT = "#define SUBHEAD " N_STATIC
+ N_STATIC = N_STATIC + 2
+ EMIT_SCBLK = "  0," SIZE(I) ","
+ EMIT_STRING_CONSTANT(.EMIT_SCBLK,I)
+*
+* A buffer for ctime()
+*
+ I = DUPL(" ", 26)
+ EMIT = "#define DATE_STRING " N_STATIC
+ N_STATIC = N_STATIC + 2
+ EMIT_SCBLK = "  0," SIZE(I) ","
+ EMIT_STRING_CONSTANT(.EMIT_SCBLK,I)
+ EMIT_SCBLK = "};"
+ EMIT_SCBLK = "#define SCBLK_END " N_STATIC
+ :(RETURN)
+*
+* ENP: end a procedure. This does nothing in our
+*  implementation.
+*
+OP_ENP :(RETURN)
+*
+* ENT: entry point for BRI, with special LEI
+*  value attached. We will build a table of ENT
+*  branch addresses, LEI values, and strings for
+*  the ENT label name.  BRI will index into
+*  that table, so all ENT pointers will be
+*  valid static-area addresses.
+*
+OP_ENT EMIT = REPLACE(LABEL,"$","_") ": // ENT"
+ V = 0
+ V = NE(SIZE(TRIM(OPERANDS))) OPERAND_VAL(OPERANDS)
+ EMIT_ELBL = "#define lei_" REPLACE(TRIM(LABEL),"$","_") " " V
++ :(RETURN)
+*
+* EQU: define constant symbol
+*
+OP_EQU OPERANDS TAB(0) "*" RTAB(0) :F(EQU_OPS)
+ EMIT = "// " LABEL " EQU * (" DEFAULT_DEFS<LABEL> ")"
+ DEF_SYM<LABEL> = 1
+ SYM_TABLE<LABEL> = DEFAULT_DEFS<LABEL> :(RETURN)
+EQU_OPS V = OPERAND_EQOP(OPERANDS)
+ EMIT = "// " LABEL " EQU " V
+ DEF_SYM<LABEL> = 1
+ SYM_TABLE<LABEL> = V :(RETURN)
+*
+* ERB: go to error section with specified error code (and message).
+*
+OP_ERB OPERANDS POS(0) SPAN('0123456789') . N ',' REM . V :F(FRETURN)
+ EMIT_LABEL(LABEL)
+ N POS(0) SPAN('0') =
+ EMIT = "  WA = " N ";"
+ EMIT = "  goto ERROR_SECTION; // ERR " OPERANDS COMMENTS
+ ERROR_MESSAGES<N> = V COMMENTS :(RETURN)
+*
+* ERR: go to error section with specified error code (and message),
+*  used in the PPM exit table from a procedure call.
+*
+OP_ERR OPERANDS POS(0) SPAN('0123456789') . N ',' REM . V :F(FRETURN)
+ JSR_PPM_N = JSR_PPM_N + 1
+ EMIT = "  if (EXI_CODE == " JSR_PPM_N ") {"
+ N POS(0) SPAN('0') =
+ EMIT = "    WA = " N ";"
+ EMIT = "    goto ERROR_SECTION; // ERR " OPERANDS COMMENTS
+ EMIT = "  }"
+ ERROR_MESSAGES<N> = V COMMENTS :(RETURN)
+*
+* ESW: end BSW switch table. BSW_P (if it exists)
+*  is the default (no match) branch.
+*
+OP_ESW EMIT = NE(SIZE(BSW_P)) "    default: goto "
++ REPLACE(BSW_P,"$","_") ";"
+ EMIT = "  } // ESW" :(RETURN)
+*
+* ETX: RA = e ** RA;
+*
+OP_ETX EMIT_LABEL(LABEL)
+ EMIT = "  RA = expl(RA); // ETX" :(RETURN)
+*
+* EXI: return from procedure, possibly with an alternate
+*  exit code. We store the exit code in EXI_CODE before
+*  branching.
+*
+*  Recursive procedures pop their return address from the
+*  stack, while non-recursive and "either" procedures use
+*  a dedicated return-address variable.
+*
+*  The recursive return address is actually a pointer to
+*  the static region, where we've stored the real return
+*  address. This ensures that the address on the stack
+*  is suitable for the garbage collector.
+*
+OP_EXI EMIT_LABEL(LABEL)
+ EMIT = EQ(SIZE(TRIM(OPERANDS)))
++ "  EXI_CODE = 0; // EXI (no code)"
+ EMIT = NE(SIZE(TRIM(OPERANDS)))
++ "  EXI_CODE = " OPERANDS "; // EXI " OPERANDS
+ PRC_OPERANDS POS(0) "R," :S(EXI_RECURSE)
+ EMIT = "  goto *" PRC_RETURN ";" :(RETURN)
+EXI_RECURSE EMIT = "  goto *((void *) min_mem<:min_mem<:XS++:>:>);"
++ :(RETURN)
+*
+* EXP: external procedure.  Well, nothing much to do here
+*  except record its externality in our table of procedures.
+*
+OP_EXP EMIT = "// EXTERNAL PROCEDURE " LABEL
+ PNAM_TABLE<LABEL> = "EXTERNAL" :(RETURN)
+*
+* FLC: fold case (to upper case).
+*
+OP_FLC EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG RPOS(0) :F(FRETURN)
+ EMIT = "  " OPERANDS " = toupper(" OPERANDS "); // FLC" :(RETURN)
+*
+* ICA: increment address (add one word, which in our
+*  implementation is 1).
+*
+OP_ICA EMIT_LABEL(LABEL)
+ EMIT = "  *((unsigned long long *) " OPERAND_OPN(OPERANDS)
++ ") += 1ull; // ICA " OPERANDS :S(RETURN)F(FRETURN)
+*
+* ICP: increment code pointer (CP)
+*
+OP_ICP EMIT_LABEL(LABEL)
+ EMIT = "  CP += 1; // ICP" :(RETURN)
+*
+* ICV: increment value (add one)
+*
+OP_ICV EMIT_LABEL(LABEL)
+ EMIT = "  *" OPERAND_OPN(OPERANDS)
++ " += 1; // ICV " OPERANDS :S(RETURN)F(FRETURN)
+*
+* IEQ: branch if IA is zero
+*
+OP_IEQ EMIT_LABEL(LABEL)
+ EMIT = "  if (IA == 0) goto " REPLACE(OPERANDS,"$","_") "; // IEQ "
++ OPERANDS :(RETURN)
+*
+* IFF: case for the BSW switch statement
+*
+OP_IFF OPERANDS POS(0) BREAK(",") . V ',' REM . P :F(FRETURN)
+ EMIT = "    case " OPERAND_VAL(V) ": goto "
++ REPLACE(P,"$","_") "; // ifF " OPERANDS :(RETURN)
+*
+* IGE: branch if IA >= 0
+*
+OP_IGE EMIT_LABEL(LABEL)
+ EMIT = "  if (IA >= 0) goto " REPLACE(OPERANDS,"$","_") "; // IGE "
++ OPERANDS :(RETURN)
+*
+* IGT: branch if IA > 0
+*
+OP_IGT EMIT_LABEL(LABEL)
+ EMIT = "  if (IA > 0) goto " REPLACE(OPERANDS,"$","_") "; // IGT "
++ OPERANDS :(RETURN)
+*
+* ILE: branch if IA <= 0 (signed, of course)
+*
+OP_ILE EMIT_LABEL(LABEL)
+ EMIT = "  if (IA <= 0) goto " REPLACE(OPERANDS,"$","_") "; // ILE "
++ OPERANDS :(RETURN)
+*
+* ILT: branch if IA < 0
+*
+OP_ILT EMIT_LABEL(LABEL)
+ EMIT = "  if (IA < 0) goto " REPLACE(OPERANDS,"$","_") "; // ILT "
++ OPERANDS :(RETURN)
+*
+* INE: branch if IA != 0
+*
+OP_INE EMIT_LABEL(LABEL)
+ EMIT = "  if (IA) goto " REPLACE(OPERANDS,"$","_") "; // INE "
++ OPERANDS :(RETURN)
+*
+* INO: branch if no integer overflow
+*
+OP_INO EMIT_LABEL(LABEL)
+ EMIT = " if (!(integer_overflow & CHECKINT_OVERFLOW_ERROR)) goto "
++ REPLACE(OPERANDS,"$","_") "; // INO" :(RETURN)
+*
+* IOV: branch if integer overflow
+*
+OP_IOV EMIT_LABEL(LABEL)
+ EMIT = " if (integer_overflow & CHECKINT_OVERFLOW_ERROR) goto "
++ REPLACE(OPERANDS,"$","_") "; // IOV" :(RETURN)
+*
+* INP: define internal procedure (we need to know the calling
+*  sequence when we do the JSR, so it is helpful to have
+*  these things defined in advance.
+*
+OP_INP EMIT = "// INTERNAL PROCEDURE " LABEL "(" OPERANDS ")"
+ PNAM_TABLE<LABEL> = OPERANDS :(RETURN)
+*
+* INR: define an internal routine
+*   we don't really care, but we record the details
+*
+OP_INR EMIT = "// INTERNAL ROUTINE " LABEL
+ PNAM_TABLE<LABEL> = "INR" :(RETURN)
+*
+* ITR: convert integer in IA and put results in RA.
+*
+OP_ITR EMIT_LABEL(LABEL)
+ EMIT = "  RA = (long double) IA; // ITR" :(RETURN)
+*
+* JSR: do subroutine (PRC) call. There are two flavors.
+*
+*  Not recursive: store the return address in a special
+*   location NAME_return.
+*
+*  Recursive: Create a static location to hold our
+*   return address, push the address of that location
+*   onto the stack (so that the stack won't confuse
+*   the garbage collector).
+*
+OP_JSR EMIT_LABEL(LABEL)
+ JSR_PPM_N = 0
+ PNAM_TABLE<OPERANDS> POS(0) "R," :S(JSR_RECURSE)
+ EMIT = "  " REPLACE(OPERANDS,"$","_") "_return = &&JSR_RETURN_"
++ JSR_N ";"
+ EMIT = "  goto " REPLACE(OPERANDS,"$","_") ";"
+ EMIT = "JSR_RETURN_" JSR_N ":"
+ JSR_N = JSR_N + 1 :(RETURN)
+*
+* recursive JSR here
+*
+JSR_RECURSE EMIT = "  *"
++ OPERAND_OPN("-(XS)") " = " N_STATIC ";"
+ EMIT = "  min_mem<:" N_STATIC ":> = (unsigned long long) "
++ "&&JSR_RETURN_" JSR_N ";"
+ N_STATIC = N_STATIC + 1
+ EMIT = "  goto " REPLACE(OPERANDS,"$","_") ";"
+ EMIT = "JSR_RETURN_" JSR_N ":"
+ JSR_N = JSR_N + 1 :(RETURN)
+*
+* LCH: load character
+*
+OP_LCH EMIT_LABEL(LABEL)
+ OPERANDS POS(0) (INDEX_REG | W_REG) . R ',' REM . C :F(FRETURN)
+ EMIT = "  " R " = *" OPERAND_OPC(C) "; // LCH " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* LCP: set the code pointer (CP) register
+*
+OP_LCP EMIT_LABEL(LABEL)
+ OPERANDS (INDEX_REG | W_REG) :F(FRETURN)
+ EMIT = "  CP = " OPERANDS "; // LCP "
++ OPERANDS :(RETURN)
+*
+* LCT: set up for BCT.  In particular, ensure that the count
+*  value is non-zero.
+*
+OP_LCT EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ OPERANDS POS(0) ("WA" | "WB" | "WC") . W "," REM . V :F(FRETURN)
+ EMIT = "  if (!" OPERAND_OPV(V) ") bad_lct();" :F(FRETURN)
+ EMIT = "  " W " = " OPERAND_OPV(V) ";" :S(RETURN)F(FRETURN)
+*
+* LCW: get the next "code word" and increment CP
+*
+OP_LCW EMIT_LABEL(LABEL)
+ OPERANDS POS(0) (INDEX_REG | W_REG) RPOS(0) :F(FRETURN)
+ EMIT = "  " OPERANDS " = min_mem[CP++]; // LCW "
++ OPERANDS :(RETURN)
+*
+* LDI: load an integer into IA
+*
+OP_LDI EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ EMIT = "  IA = *((unsigned long long *) " OPERAND_OPS(OPERANDS)
++ ");" :S(RETURN)F(FRETURN)
+*
+* LDR: load a real into RA
+*
+OP_LDR EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ EMIT = "  RA = *((long double *) " OPERAND_OPS(OPERANDS)
++ "); // LDR " OPERANDS :S(RETURN)F(FRETURN)
+*
+* LEI: convert a BRI value into the corresponding LEI value.
+*
+*  The LEI value is stored at BRI-location + 1 in static-land.
+*
+OP_LEI EMIT_LABEL(LABEL)
+ OPERANDS POS(0) INDEX_REG RPOS(0) :F(FRETURN)
+ EMIT = "  " OPERANDS " = min_mem<:" OPERANDS "+1:>;" :(RETURN)
+*
+* LNF: natural log of RA
+*
+OP_LNF EMIT_LABEL(LABEL)
+ EMIT = "  RA = logl(RA); // LNF" :(RETURN)
+*
+* LSH: shift left (constant value)
+*
+OP_LSH EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W ',' REM . V :F(FRETURN)
+ EMIT = "  " W " = " W " << " OPERAND_VAL(V) "; // LSH " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* LSX: shift left (X register holds amount)
+*
+OP_LSX EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W ',' INDEX_REG . X RPOS(0) :F(FRETURN)
+ EMIT = "  " W " = " W " << " X "; // LSX " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* MCB: move characters backwards (i.e., from high to low address)
+*
+OP_MCB EMIT_LABEL(LABEL)
+ EMIT = "  for (; WA; WA--)"
+ EMIT = "    *--CXR = *--CXL;" :(RETURN)
+*
+* Move IA to register; branch if outside
+*  the unsigned range, i.e., if it is less
+*  than zero.
+*
+OP_MFI EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . N ',' REM . L :S(MFI_HAS_L)
+ N = OPERANDS
+MFI_HAS_L EMIT = "  *" OPERAND_OPN(N) " = IA; // MFI "
++ OPERANDS :F(FRETURN)
+ EMIT = NE(SIZE(TRIM(L)))
++ "  if (IA < 0) goto " REPLACE(L,"$","_") ";" :(RETURN)
+*
+* MLI: multiply (signed integer)
+*
+OP_MLI EMIT_LABEL(LABEL)
+ EMIT = "  integer_overflow = CHECKINT_NO_ERROR;"
+ EMIT = "  IA = check_int64_mul(IA, *((long long *) " OPERAND_OPS(OPERANDS)
++ "), &integer_overflow); // MLI " OPERANDS :S(RETURN)F(FRETURN)
+*
+* MLR: multiply (real)
+*
+OP_MLR EMIT_LABEL(LABEL)
+ EMIT = "  RA *= *((long double *) " OPERAND_OPS(OPERANDS)
++ "); // MLR " OPERANDS :S(RETURN)F(FRETURN)
+*
+* MNZ: make non zero.  1 is not zero.
+*
+OP_MNZ EMIT_LABEL(LABEL)
+ EMIT = "  *((unsigned long long *) " OPERAND_OPN(OPERANDS)
++ ") = 1; // MNZ " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* MOV: move
+*
+OP_MOV EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ OPERANDS POS(0) BREAK(",") . V "," REM . N :F(FRETURN)
+ EMIT = "  *(" OPERAND_OPN(N) ") =" :F(FRETURN)
+ EMIT = "    " OPERAND_OPV(V) "; // MOV " OPERANDS :S(RETURN)F(FRETURN)
+*
+* MVC: move characters (starting at low address)
+*
+OP_MVC EMIT_LABEL(LABEL)
+ EMIT = "  for (; WA; WA--)"
+ EMIT = "    *CXR++ = *CXL++; // MVC" :(RETURN)
+*
+* MVW: move words (starting at low address)
+*
+OP_MVW EMIT_LABEL(LABEL)
+ EMIT = "  for (; WA; WA--)"
+ EMIT = "    min_mem[XR++] = min_mem[XL++]; // MVW" :(RETURN)
+*
+* MWB: move words backwards (starting at high address)
+*
+OP_MWB EMIT_LABEL(LABEL)
+ EMIT = "  for (; WA; WA--)"
+ EMIT = "    min_mem[--XR] = min_mem[--XL]; // MWB" :(RETURN)
+*
+* MTI: move address into IA
+*
+OP_MTI EMIT_LABEL(LABEL)
+ EMIT = "  IA = *((long long *) " OPERAND_OPN(OPERANDS) ");"
++ " // MTI " OPERANDS :S(RETURN)F(FRETURN)
+*
+* NGI: negate IA
+*
+OP_NGI EMIT_LABEL(LABEL)
+ EMIT = "  integer_overflow = CHECKINT_NO_ERROR;"
+ EMIT = "  IA = check_int64_sub(0ll, IA, &integer_overflow); // NGI" :(RETURN)
+*
+* NGR: negate RA
+*
+OP_NGR EMIT_LABEL(LABEL)
+ EMIT = "  RA = -RA; // NGR" :(RETURN)
+*
+* NZB: branch if not zero (bits, which happens to
+*  be the same as not zero integer/unsigned).
+*
+OP_NZB EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W ',' REM . P :F(FRETURN)
+ EMIT = "  if (" W ") goto " REPLACE(P,"$","_") "; // NZB" :(RETURN)
+*
+* ORB: bit-wise OR
+*
+OP_ORB EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . W0 ',' W_REG . W1 RPOS(0) :F(FRETURN)
+ EMIT = "  " W1 " ??!= *((unsigned long long *) " OPERAND_OPW(W0)
++ "); // ORB " OPERANDS :S(RETURN)F(FRETURN)
+*
+* PPM: exit-code branch following JSR
+*
+OP_PPM JSR_PPM_N = JSR_PPM_N + 1
+ EMIT = NE(SIZE(TRIM(OPERANDS)))
++ "  if (EXI_CODE == " JSR_PPM_N ") goto "
++ REPLACE(OPERANDS,"$","_") "; // PPM " OPERANDS :(RETURN)
+*
+* PRC: define procedure. Verify that it matches the original
+*  declaration.
+*
+OP_PRC EMIT = REPLACE(LABEL,"$","_") ": // PRC " OPERANDS
+ PRC_OPERANDS = OPERANDS
+ OUTPUT = LNE(OPERANDS,PNAM_TABLE<LABEL>) "*** PRC MISMATCH " LABEL ":"
++ OPERANDS " != " PNAM_TABLE<LABEL> :S(FRETURN)
+ PRC_RETURN = REPLACE(LABEL,"$","_") "_return" :(RETURN)
+*
+* PLC: prepare to load characters. Same as PSC in this
+*  implemenation.
+OP_PLC OP_PSC(LABEL,OPERANDS,COMMENTS) :S(RETURN)F(FRETURN)
+*
+* PSC: prepare to store characters. Copy the X register to
+*  a shadow CX character pointer register, with the specified
+*  offset.
+*
+OP_PSC EMIT_LABEL(LABEL)
+ V = ""
+ OPERANDS POS(0) ("XR" | "XL") . X
++ ((',' REM . V) | NULL) RPOS(0) :F(FRETURN)
+ V = EQ(SIZE(TRIM(V))) "=FAKE$ZERO"
+ V = OPERAND_OPV(V) " + 16ULL" :F(FRETURN)
+ EMIT = "  C" X " = ((unsigned char *) (min_mem+" X ")) + " V
++ "; // PSC " OPERANDS :(RETURN)
+*
+* REQ: branch if RA equal to zero
+*
+OP_REQ EMIT_LABEL(LABEL)
+ EMIT = "  if (RA == 0.0) goto " REPLACE(OPERANDS,"$","_") "; // REQ "
++ OPERANDS :(RETURN)
+*
+* RGE: branch if RA greater than or equal to zero
+*
+OP_RGE EMIT_LABEL(LABEL)
+ EMIT = "  if (RA >= 0.0) goto " REPLACE(OPERANDS,"$","_") "; // RGE "
++ OPERANDS :(RETURN)
+*
+* RGT: branch if RA greater than zero
+*
+OP_RGT EMIT_LABEL(LABEL)
+ EMIT = "  if (RA > 0.0) goto " REPLACE(OPERANDS,"$","_") "; // RGT "
++ OPERANDS :(RETURN)
+*
+* RLE: branch if RA less than or equal to zero
+*
+OP_RLE EMIT_LABEL(LABEL)
+ EMIT = "  if (RA <= 0.0) goto " REPLACE(OPERANDS,"$","_") "; // RLE "
++ OPERANDS :(RETURN)
+*
+* RLT: branch if RA less than zero
+*
+OP_RLT EMIT_LABEL(LABEL)
+ EMIT = "  if (RA < 0.0) goto " REPLACE(OPERANDS,"$","_") "; // RLT "
++ OPERANDS :(RETURN)
+*
+* RNE: branch if RA not zero
+*
+OP_RNE EMIT_LABEL(LABEL)
+ EMIT = "  if (RA != 0.0) goto " REPLACE(OPERANDS,"$","_") "; // RNE "
++ OPERANDS :(RETURN)
+*
+* RMI: integer remainder. Note that this operation can't
+*  overflow.
+*
+OP_RMI EMIT_LABEL(LABEL)
+ EMIT = "  integer_overflow = CHECKINT_NO_ERROR;"
+ EMIT = "  IA %= *((long long *) " OPERAND_OPS(OPERANDS)
++ "); // RMI " OPERANDS :S(RETURN)F(FRETURN)
+*
+* RNO: branch if no real overflow
+*  we assume overflow if RA is INF or NaN.
+*
+OP_RNO EMIT_LABEL(LABEL)
+ EMIT = "  if (isfinite(RA)) goto " REPLACE(OPERANDS,"$","_")
++ "; // RNO " OPERANDS :(RETURN)
+*
+* ROV: branch if real overflow
+*
+OP_ROV EMIT_LABEL(LABEL)
+ EMIT = "  if (!isfinite(RA)) goto " REPLACE(OPERANDS,"$","_")
++ "; // ROV " OPERANDS :(RETURN)
+*
+* RSH: right shift (constant amount)
+*
+OP_RSH EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W ',' REM . V :F(FRETURN)
+ EMIT = "  " W " = " W " >> " OPERAND_VAL(V) "; // RSH " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* RSX: right shift (amount in X register)
+*
+OP_RSX EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W ',' INDEX_REG . X RPOS(0) :F(FRETURN)
+ EMIT = "  " W " = " W " >> " X "; // RSX " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* RTI: real to integer, detecting overflow
+*
+OP_RTI EMIT_LABEL(LABEL)
+ EMIT = NE(SIZE(TRIM(OPERANDS)))
++ "  if (fabsl(RA) > 92233720368547758.0L) goto "
++ REPLACE(OPERANDS,"$","_") ";"
+ EMIT = "  IA = (long long) RA; // RTI " OPERANDS :(RETURN)
+*
+* RTN: start a routine.  This is a no-op.
+*
+OP_RTN EMIT_LABEL(LABEL) :(RETURN)
+*
+* SBI: integer subtraction. May signal overflow.
+*
+OP_SBI EMIT_LABEL(LABEL)
+ EMIT = "  integer_overflow = CHECKINT_NO_ERROR;"
+ EMIT = "  IA = check_int64_sub(IA, *((long long *) " OPERAND_OPS(OPERANDS)
++ "), &integer_overflow); // SBI " OPERANDS :S(RETURN)F(FRETURN)
+*
+* SBR: real subtraction.
+*
+OP_SBR EMIT_LABEL(LABEL)
+ EMIT = "  RA -= *((long double *) " OPERAND_OPS(OPERANDS)
++ "); // SBR " OPERANDS :S(RETURN)F(FRETURN)
+*
+* SCH: store character (using shadow register pointers)
+*
+OP_SCH EMIT_LABEL(LABEL)
+ OPERANDS POS(0) (INDEX_REG | W_REG) . R ',' REM . C :F(FRETURN)
+ EMIT = "  *" OPERAND_OPC(C) " = " R "; // SCH " OPERANDS
++ :S(RETURN)F(FRETURN)
+*
+* SCP: store CP (put the current value somewhere useful).
+*
+OP_SCP EMIT_LABEL(LABEL)
+ OPERANDS POS(0) INDEX_REG RPOS(0) :S(SCP_INDEX)
+ OPERANDS POS(0) W_REG RPOS(0) :F(FRETURN)
+ EMIT = "  " OPERANDS " = (unsigned long long) CP; // SCP "
++ OPERANDS :(RETURN)
+SCP_INDEX
+ EMIT = "  " OPERANDS " = CP; // SCP "
++ OPERANDS :(RETURN)
+*
+* SEC: next section.
+*
+OP_SEC SECTION_NUMBER = SECTION_NUMBER + 1
+ EMIT = "// SECTION " SECTION_NUMBER
+*
+* between sections 2 and 3, emit the "const_sec" initializer
+*  since section 3 is the constants section.
+*
+ EMIT = EQ(SECTION_NUMBER,3) "static const unsigned long long "
++ "const_sec??(??) = {" :S(RETURN)
+*
+* after section 3, save the number of constants in case we care.
+*  We really don't care now, but we might some day, so
+*  why not collect the information?
+*
+ N_CONSTANTS = EQ(SECTION_NUMBER,4) N_STATIC :S(RETURN)
+*
+* At the start of section 5, we prepare for the code section
+* by finishing off the const_sec initializer and setting up
+* the minimal_code function with all its variables.
+*
+SEC_5P N_WORK = EQ(SECTION_NUMBER,5) N_STATIC :F(SEC_6P)
+ EMIT = "}; // END OF WORKING AREA"
+ EMIT = "#define hash_HSHTB " SYM_TABLE<"HSHTB">
+ EMIT = "#define hash_HSHTE " SYM_TABLE<"HSHTE">
+ EMIT = "static void minimal_code(void)"
+ EMIT = "{"
+ EMIT = "  unsigned long long XR, XS, XL;"
+ EMIT = "  unsigned char *CXR, *CXL;"
+ EMIT = "  unsigned long long WA, WB, WC;"
+ EMIT = "  unsigned long long memory_size = 1024*1024*1024;"
+ EMIT = "  unsigned long long *min_mem = malloc(memory_size);"
+ EMIT = "  unsigned long long EXI_CODE;"
+ EMIT = "  unsigned long long CP;"
+ EMIT = "  void *lei_return = (void *) 0;"
+ EMIT = "  unsigned long long lei_value;"
+ EMIT = "  unsigned long long STACK_LIMIT = SCBLK_END + 100;"
+ EMIT = "#define XT XL"
+ EMIT = "  time_t tloc;"
+ EMIT = "  long long IA;"
+ EMIT = "  long double RA;"
+ EMIT = "  int integer_overflow;"
+ EMIT = "  char syscr_buffer<:48:>;"
+*
+* now we declare all the return-address variables for the
+* non-recursive procedures.
+*
+ I = 0
+ PNAM_ARRAY = CONVERT(PNAM_TABLE,'ARRAY')
+PNAM_RET I = I + 1
+ PNAM_ARRAY<I,1> :F(PNAM_DONE)
+ PNAM_ARRAY<I,2> POS(0) 'R,' :S(PNAM_RET)
+ EMIT = "  void *" PNAM_ARRAY<I,1> "_return;" :(PNAM_RET)
+PNAM_DONE
+*
+* and we set up the (entry-branch,LEI-value,string-name) triples
+* for each ENT
+*
+ENT_LOOP ENT = ENTS :F(ENTS_DONE)
+ L = TRIM(ENT)
+ EMIT = "  // (" L ")"
+ EMIT = "  min_mem<:" N_STATIC ":> = (unsigned long long) &&"
++ REPLACE(L,"$","_") ";"
+ EMIT = "  min_mem<:" (N_STATIC + 1) ":> = lei_"
++ REPLACE(L,"$","_") ";"
+ EMIT = "  min_mem<:" (N_STATIC + 2) ':> = (unsigned long long) "' L '";'
+ EMIT = "#define ent_loc_" REPLACE(L,"$","_") " " N_STATIC
+ SYM_TABLE<L> = N_STATIC
+ N_STATIC = N_STATIC + 3 :(ENT_LOOP)
+ENTS_DONE N_EBLK = N_STATIC
+ EMIT = "#define FIRST_EBLK " N_WORK
+ EMIT = "#define LAST_EBLK " (N_STATIC - 1)
+*
+* copy const_sec and the scblks (strings) to min_mem
+*
+ EMIT = "  memcpy(min_mem, const_sec, " (8 * N_WORK) ");"
+ EMIT = "  memcpy(min_mem+SCBLK_START, scblks, 8*(SCBLK_END-"
++ "SCBLK_START));"
+*
+* now we take care of forward references in working and static areas,
+* and real (long double) initializations.
+*
+ FIX_UPS_A = CONVERT(FIX_UPS,'ARRAY')
+ I = 0
+FIX_UP_LOOP I = I + 1
+ UPS = FIX_UPS_A<I,2> :F(FIX_UP_DONE)
+ EMIT = "// " FIX_UPS_A<I,1> ":" UPS
+ FIX_UPS_A<I,1> POS(0) ANY('+-0123456789.') :S(EACH_FIX_UP)
+ V = SYM_TABLE<FIX_UPS_A<I,1>>
+ V = EQ(SIZE(TRIM(V))) N_STATIC :F(EACH_FIX_UP)
+ EMIT = "  min_mem<:" N_STATIC ":> = &&"
++ REPLACE(FIX_UPS_A<I,1>,"$","_") ";"
+ EMIT = "  min_mem<:" (N_STATIC + 1) ":> = lei_"
++ REPLACE(FIX_UPS_A<I,1>,"$","_") ";"
+ SYM_TABLE<FIX_UPS_A<I,1>> = N_STATIC
+ N_STATIC = N_STATIC + 2
+EACH_FIX_UP UPS ' ' SPAN('0123456789') . UP = :F(FIX_UP_LOOP)
+ FIX_UPS_A<I,1> POS(0) ANY('+-0123456789.') :S(FIX_UP_REAL)
+ EMIT = "  min_mem<:" UP ":> = " V ";"
++ :(EACH_FIX_UP)
+FIX_UP_REAL EMIT = "  *((long double *) (min_mem + " UP ")) = "
++ FIX_UPS_A<I,1> ";" :(EACH_FIX_UP)
+FIX_UP_DONE
+*
+* Initialize registers
+*
+ EMIT = "  XS = SCBLK_END + 32768;"
+ EMIT = "  XR = XS;"
+ EMIT = "  XL = (1024*1024*1024)/8 - 1;"
+ EMIT = "  WA = XS;"
+ EMIT = "  WB = 0;"
+ EMIT = "  WC = 0;"
+ EMIT = "  IA = 0;"
+ EMIT = "  RA = 0.0;" :(RETURN)
+*
+* Section 6 is the stack overflow section, so emit
+*  the label we transfer to with CHK instructions
+*
+SEC_6P EMIT = EQ(SECTION_NUMBER,6) "STACK_OVERFLOW:" :S(RETURN)
+*
+* Section 7 is the error handler, so emit that label.
+*
+ EMIT = EQ(SECTION_NUMBER,7) "ERROR_SECTION:" :(RETURN)
+*
+* SIN: sine of RA
+*
+OP_SIN EMIT_LABEL(LABEL)
+ EMIT = "  RA = sinl(RA); // SIN" :(RETURN)
+*
+* SQR: square root of RA
+*
+OP_SQR EMIT_LABEL(LABEL)
+ EMIT = "  RA = sqrtl(RA); // SQR" :(RETURN)
+*
+* SSL: load subroutine stack. We don't have one,
+*  so this is a no-op.
+*
+OP_SSL EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ EMIT = "  ; // SSL (do nothing)" :(RETURN)
+*
+* SSS: store subroutine stack. Also a no-op.
+*
+OP_SSS EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ EMIT = "  ; // SSS (do nothing)" :(RETURN)
+*
+* STI: store integer
+*
+OP_STI EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
+ EMIT = "  *((unsigned long long *) " OPERAND_OPS(OPERANDS)
++ ") = IA; // STI" :S(RETURN)F(FRETURN)
+*
+* STR: store real
+*
+OP_STR EMIT_LABEL(LABEL)
+ EMIT = "  *((long double *) " OPERAND_OPS(OPERANDS) ") = RA;"
++ " // STR " OPERANDS :S(RETURN)F(FRETURN)
+*
+* SUB: unsigned subtraction.
+*
+OP_SUB EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . V ',' REM . N :F(FRETURN)
+ EMIT = "  *((unsigned long long *) " OPERAND_OPN(N) ") -= "
++ OPERAND_OPV(V) "; // SUB " OPERANDS :S(RETURN)F(FRETURN)
+*
+* TAN: tangent of RA
+*
+OP_TAN EMIT_LABEL(LABEL)
+ EMIT = "  RA = tanl(RA); // TAN" :(RETURN)
+*
+* TRC: translate characters
+*
+OP_TRC EMIT_LABEL(LABEL)
+ EMIT = "  for (; WA; WA--,CXL++)"
+ EMIT = "    *CXL = CXR<:*CXL:>; // TRC" :(RETURN)
+*
+* TTL: set the listing title (effectively a no-op because
+*  hey, we don't have a listing.
+*
+OP_TTL TITLE = OPERANDS COMMENTS :(RETURN)
+*
+* WTB: words to bytes. Since we have one byte per word,
+*  this is a no-op.
+*
+OP_WTB EMIT_LABEL(LABEL)
+ EMIT = "  ; // WTB no-op" :(RETURN)
+*
+* XOB: bitwise XOR
+*
+OP_XOB EMIT_LABEL(LABEL)
+ OPERANDS POS(0) BREAK(',') . W0 ',' W_REG . W1 RPOS(0) :F(FRETURN)
+ EMIT = "  " W1 " ??'= *((unsigned long long *) " OPERAND_OPW(W0)
++ "); // ' XOB " OPERANDS :S(RETURN)F(FRETURN)
+*
+* ZER: store zero
+*
+OP_ZER EMIT_LABEL(LABEL)
+ EMIT = "  *((unsigned long long *) " OPERAND_OPN(OPERANDS) ") = 0;"
++ " // ZER " OPERANDS :S(RETURN)F(FRETURN)
+*
+* ZGB: zeroise garbage bits. We have no garbage bits (8 characters
+*  fit exactly into one word) so this is a no-op.
+*
+OP_ZGB EMIT_LABEL(LABEL) :(RETURN)
+*
+* ZRB: branch if all zero bits.  Which is really branch if not zero.
+*
+OP_ZRB EMIT_LABEL(LABEL)
+ OPERANDS POS(0) W_REG . W ',' REM . P :F(FRETURN)
+ EMIT = "  if (!" W ") goto " REPLACE(P,"$","_") ";" :(RETURN)
+*
+* OPERAND: EQOP.  The operand in EQU
+*
+*  can be an already-defined value, the sum of two values,
+*  the nonnegative difference of two values, or * for the
+*  translator-supplied default value for a parameter. The
+*  * default case is taken care of by our caller, so we never
+*  see it in OPERAND_EQOP.
+*
+*  First, see if we have a sum or difference.
+*
+OPERAND_EQOP OPERANDS POS(0) BREAK('+-') . V0 LEN(1) . OPERATOR
++ REM . V1 :S(OV_COMPOUND)
+*
+*  Now, see if we have a decimal number
+*
+ OPERANDS POS(0) SPAN('0123456789') RPOS(0) :S(OV_NUMERIC)
+*
+*  Ok, we have some sort of symbolic parameter
+*
+ EMIT = "// OPERAND VAL SYMBOLIC " OPERANDS " = "
++ SYM_TABLE<OPERANDS>
+ OPERAND_EQOP = SYM_TABLE<OPERANDS> :(RETURN)
+OV_NUMERIC EMIT = "// OPERAND VAL NUMERIC " OPERANDS
+ OPERAND_EQOP = OPERANDS :(RETURN)
+OV_COMPOUND EMIT = "// OPERAND VAL COMPOUND " OPERANDS
+ OPERAND_EQOP = EVAL(OPERAND_EQOP(V0) " " OPERATOR " " OPERAND_EQOP(V1))
++ :(RETURN)
+*
+* OPERAND: VAL. A one-word integer constant, either numeric
+*  or previously defined in the definitions section (the EQU
+*  section, aka section 2).
+*
+OPERAND_VAL OPERANDS POS(0) SPAN('0123456789') . OPERAND_VAL
++ RPOS(0) :S(RETURN)
+ OPERAND_VAL = SYM_TABLE<OPERANDS> :(RETURN)
+*
+* OPERAND: OPS. Memory reference.
+*
+* Is it a symbol in the symbol table?
+*
+OPERAND_OPS NE(SIZE(SYM_TABLE<OP>)) :S(OP_S_SYM)
+*
+* Is it indirection through an index register?
+*
+ OP POS(0) "(" INDEX_REG . X ")" :S(OP_S_IN_X)
+*
+* Is it an integer offset through an index register?
+*
+ OP POS(0) SPAN('0123456789') . I "(" INDEX_REG . X ")" :S(OP_SI_X)
+*
+* Last chance: is it a symbolic offset through an index register?
+*
+ OP POS(0) BREAK('(') . I "(" INDEX_REG . X ")" :F(FRETURN)
+*
+* Technically, for INT(X) and DLBL(X) X contains an address and
+* INT and DLBL are word offsets from that address.
+*
+* For CLBL(X) and WLBL(X) (constant/working store symbols), CLBL
+* or WLBL are addresses and X contains a byte offset from that
+* address. Since we have word-addresses (one byte per word), we
+* don't care, and can just add everything together and laugh
+* maniacally. The result is type (unsigned long long *).
+*
+ OPERAND_OPS = NE(DEF_SYM<I>) "(" SYM_TABLE<I>
++ "+ " X " + min_mem)" :S(RETURN)
+ OPERAND_OPS = "(" X " + " SYM_TABLE<I>
++ " + min_mem)" :S(RETURN)
+*
+* Here for INT(X).  See above: we just Add Things Up to get
+* our (unsigned long long *) result.
+*
+OP_SI_X OPERAND_OPS = "(" I
++ "+" X "+min_mem)" :(RETURN)
+*
+* Here for WLBL/CLBL, symbolic address. Just add the symbol table
+* value to our base to get (unsigned long long *).
+*
+OP_S_SYM OPERAND_OPS = "(" SYM_TABLE<OP>
++ "+min_mem)" :(RETURN)
+*
+* Here for indirect-through-X
+*
+OP_S_IN_X OPERAND_OPS = "(min_mem+" X ")" :(RETURN)
+*
+* OPERAND: OPW.  This adds three choices to OPS:
+*  work register.
+*  post-increment X reference.
+*  pre-decrement X reference.
+*
+OPERAND_OPW OP POS(0) ("WA" | "WB" | "WC") . X RPOS(0) :S(OP_W_W)
+ OP POS(0) "(" INDEX_REG . X ")+" RPOS(0) :S(OP_W_POSTINC)
+ OP POS(0) "-(" INDEX_REG . X ")" RPOS(0) :S(OP_W_PREDEC)
+ OPERAND_OPW = OPERAND_OPS(OP) :S(RETURN)F(FRETURN)
+*
+* Here for work register. Return the address of the W register.
+*
+OP_W_W OPERAND_OPW = "&" X :(RETURN)
+*
+* Here for post-increment.
+*
+OP_W_POSTINC OPERAND_OPW = "(min_mem + " X "++)" :(RETURN)
+*
+* And here for pre-decrement.
+*
+OP_W_PREDEC OPERAND_OPW = "(min_mem + --" X ")":(RETURN)
+*
+* OPERAND: OPC. Character operands for LCH, SCH, et al.
+*  Return the appropriate (char *) shadow register reference.
+*  This can be straight-indirect (X), pre-decrement -(X), or
+*  post-increment (X)+.
+*
+OPERAND_OPC OP POS(0) '(' ("XL" | "XR") . X ')' RPOS(0) :S(OP_C_X)
+ OP POS(0) '(' ("XL" | "XR") . X ')+' RPOS(0) :S(OP_C_P)
+ OP POS(0) '-(' ("XL" | "XR") . X ')' RPOS(0) :F(FRETURN)
+*
+* Here for pre-decrement.
+*
+ OPERAND_OPC = "--C" X :(RETURN)
+*
+* Here for straight indirect.
+*
+OP_C_X OPERAND_OPC = "C" X :(RETURN)
+*
+* Here for post-increment.
+*
+OP_C_P OPERAND_OPC = "C" X "++" :(RETURN)
+*
+* OPERAND: OPN. All of OPW + the X registers.
+*
+OPERAND_OPN OP POS(0) INDEX_REG . X RPOS(0) :S(OP_N_INDEX)
+ OPERAND_OPN = OPERAND_OPW(OP) :S(RETURN)F(FRETURN)
+*
+* Here if an X register. Return the address of the register.
+*
+OP_N_INDEX OPERAND_OPN = "&" X :(RETURN)
+*
+* OPERAND: OPV.  The VALUE of OPN or an immediate operand.
+*
+OPERAND_OPV OP POS(0) "=" REM . X :S(OP_V_IMMED)
+ OP POS(0) "*" REM . X :S(OP_V_IMMED)
+*
+* Not an immediate value, so return the contents of OPN.
+*  This will produce cruft like *(&WA), which is
+*  not aesthetically pleasing but works just fine.
+*
+ OPERAND_OPV = "*(" OPERAND_OPN(OP) ")"
++ :S(RETURN)F(FRETURN)
+*
+* OPV immediate, either = or *.  * is the special
+*  code for bytes-per-word times integer. Since we have
+*  one byte per word, * and = are identical.
+*
+*  If the literal is in the symbol table, huzzah, problem
+*  solved.
+*
+OP_V_IMMED OPERAND_OPV = NE(SIZE(SYM_TABLE<X>)) SYM_TABLE<X>
++ :S(RETURN)
+*
+* The literal is not in the symbol table, so it is an ENT label.
+*
+ EMIT = "  min_mem<:" N_STATIC ":> = &&" REPLACE(X,"$","_") ";"
+ EMIT = "  min_mem<:" (N_STATIC + 1) ":> = lei_" REPLACE(X,"$","_") ";"
+ OPERAND_OPV = N_STATIC
+ SYM_TABLE<X> = N_STATIC
+ N_STATIC = N_STATIC + 2
++ :(RETURN)
+*
+* Byte (*) immediate.
+*
+OP_V_BYTE_IM OPERAND_OPV = SYM_TABLE<X> :(RETURN)
+*
+* EMIT_LABEL: emit a label for this instruction if there is one.
+*
+EMIT_LABEL EMIT = NE(SIZE(TRIM(LABEL))) REPLACE(LABEL,"$","_") ":"
++ :(RETURN)
+*
+* EMIT_STRING_CONSTANT: emit (unsigned long long) initializer for a
+*  string constant. We string the lovely little-endian characters
+*  together with multiply-add parenthesized expressions. Very ugly,
+*  but it works (and hey, we don't have to know character encodings
+*  in this code, so it works when cross-compiling on, for instance,
+*  the Mighty IBM 370).
+*
+EMIT_STRING_CONSTANT EXPR = ""
+ N = 0
+ESC_L TEXT POS(0) LEN(1) . C = :F(ESC_D)
+ EXPR = EXPR "'" C "'"
+ NE(SIZE(TEXT)) LT(N,7) :F(ESC_D)
+ N = N + 1
+ EXPR = EXPR "+256ULL*(" :(ESC_L)
+ESC_D $F = "  " EXPR DUPL(")",N) ", // " N_STATIC
+ N_STATIC = N_STATIC + 1
+ EQ(SIZE(TEXT)) :S(RETURN)
+ N = 0
+ EXPR = "" :(ESC_L)
+*
+* Complain about missing input files.
+*
+NO_DEFS OUTPUT = "*** No defaults ***" :(END)
+NO_ENTS OUTPUT = "*** No ents ***" :(END)
+NO_SOURCE OUTPUT = "*** No source ***" :(END)
+*
+* and deal with end of file on input
+*
+EOF EMIT = "// END OF FILE"
+END
